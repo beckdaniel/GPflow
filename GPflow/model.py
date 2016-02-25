@@ -174,6 +174,30 @@ class Model(Parameterized):
             self._compile()
         return hmc.sample_HMC(self._objective, num_samples, Lmax, epsilon, x0=self.get_free_state(), verbose=verbose)
 
+    def stochatic_step(self, opt_instance=None):
+        """
+        returns the update step, possibly use self._session.run(step)
+        """
+        if opt_instance is None:
+            opt_instance = tf.train.AdamOptimizer()
+
+        self._free_vars = tf.Variable(self.get_free_state())
+        self.make_tf_array(self._free_vars)
+        with self.tf_mode():
+            f = self.build_likelihood() + self.build_prior()
+            minusF = tf.neg( f, name = 'objective' )
+
+        step = opt_instance.minimize(minusF, var_list=[self._free_vars])
+
+        #initialize variables. I confess I don;t understand what this does - JH
+        init = tf.initialize_all_variables()
+        self._session.run(init)
+
+        return step
+
+
+
+
     def optimize(self, method='L-BFGS-B', callback=None, max_iters=1000, **kw):
         """
         Optimize the model to find the maximum likelihood  or MAP point. Here
