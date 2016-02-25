@@ -8,7 +8,8 @@ equations. This enables much code re-use, because these expressions appear
 frequently. 
 """
 
-def gp_predict(Xnew, X, kern, F):
+
+def gp_predict(Xnew, X, kern, F, inter_domain=False):
     """
     Given F, representing the GP at the points X, produce the mean and variance
     of the GP at the points Xnew.
@@ -21,6 +22,7 @@ def gp_predict(Xnew, X, kern, F):
     Xnew is a data matrix, size N x D
     X are inducing points, size M x D
     F are function values , size M x K
+    inter_domain determines whether inter-domain kernel needs to be used
 
     See also:
         gp_predict_whitened -- where F is rotated into V (F = LV)
@@ -31,8 +33,8 @@ def gp_predict(Xnew, X, kern, F):
     #compute kernel stuff
     num_data = tf.shape(X)[0]
     Kdiag = kern.Kdiag(Xnew)
-    Kmn = kern.K(X, Xnew)
-    Kmm = kern.K(X) + eye(num_data)*1e-6
+    Kmn = kern.K(X, Xnew) if not inter_domain else kern.Kzx(X, Xnew)
+    Kmm = kern.K(X) + eye(num_data)*1e-6 if not inter_domain else kern.Kzz(X) + eye(num_data)*1e-6
     Lm = tf.cholesky(Kmm)
 
     #this is O(N M^2)
@@ -82,8 +84,8 @@ def gaussian_gp_predict(Xnew, X, kern, q_mu, q_sqrt, num_columns):
     #compute kernel stuff
     num_data = tf.shape(X)[0]
     Kdiag = kern.Kdiag(Xnew)
-    Kmn = kern.K(X, Xnew)
-    Kmm = kern.K(X) + eye(num_data)*1e-6
+    Kmn = kern.Kzx(X, Xnew)
+    Kmm = kern.Kzz(X) + eye(num_data)*1e-6
     Lm = tf.cholesky(Kmm)
 
     #this is O(N M^2)
@@ -152,8 +154,8 @@ def gaussian_gp_predict_whitened(Xnew, X, kern, q_mu, q_sqrt, num_columns):
     #compute kernel stuff
     num_data = tf.shape(X)[0]
     Kdiag = kern.Kdiag(Xnew)
-    Kmn = kern.K(X, Xnew)
-    Kmm = kern.K(X) + eye(num_data)*1e-6
+    Kmn = kern.Kzx(X, Xnew)
+    Kmm = kern.Kzz(X) + eye(num_data)*1e-6
     Lm = tf.cholesky(Kmm)
 
     #this is O(N M^2)

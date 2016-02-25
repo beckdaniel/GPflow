@@ -4,6 +4,7 @@ import numpy as np
 from param import Param, Parameterized
 import transforms
 
+
 class Kern(Parameterized):
     """
     The basic kernel class. Handles input_dim and active dims, and provides a
@@ -25,18 +26,36 @@ class Kern(Parameterized):
             X = X[:,self.active_dims]
             if X2 is not None:
                 X2 = X2[:,self.active_dims]
-            return X, X2    
+            return X, X2
         else: # TODO: when tf can do fancy indexing, use that.
             X = tf.transpose(tf.pack([X[:,i] for i in self.active_dims]))
             if X2 is not None:
                 X2 = tf.transpose(tf.pack([X2[:,i] for i in self.active_dims]))
-            return X, X2    
+            return X, X2
 
     def __add__(self, other):
         return Add(self, other)
 
     def __mul__(self, other):
         return Prod(self, other)
+
+    def Kzx(self, Z, X):
+        return self.K(Z, X)
+
+    def Kzz(self, Z):
+        return self.K(Z)
+
+    @property
+    def pid(self):
+        """
+        Returns:
+            Number of inducing parameters per input dimension.
+        """
+        return 1
+
+    @staticmethod
+    def init_inducing(X, M, method="default"):
+        return X[np.random.permutation(len(X))[:M], :]
 
 
 class Static(Kern):
@@ -126,6 +145,10 @@ class Stationary(Kern):
         zeros = X[:,0]*0 
         return zeros + self.variance
 
+    def init_hyp(self, X, Y):
+        self.variance = np.var(Y)
+        self.lengthscales = 0.5 * (np.max(X, 0) - np.min(X, 0))
+
 
 class RBF(Stationary):
     """
@@ -134,6 +157,55 @@ class RBF(Stationary):
     def K(self, X, X2=None):
         X, X2 = self._slice(X, X2)
         return self.variance * tf.exp(-self.square_dist(X, X2)/2)
+
+
+class RBFMultiscale(RBF):
+    """
+    Multiscale inter-domain kernel.
+
+    Inducing points Z can have shape
+     - MxDx2
+     - Mx2D
+    """
+    def _sliceZ(self, Z):
+        if isinstance(self.active_dims, slice):
+            Z = Z[:, self.active_dims, :]
+            return Z
+        else: # TODO: when tf can do fancy indexing, use that.
+            Z = tf.transpose(tf.pack([Z[:, i, :] for i in self.active_dims]))
+            return Z
+
+    def _cust_square_dist(self, A, B, sc):
+        return tf.reduce_sum(tf.square((tf.expand_dims(A, 1) - tf.expand_dims(B, 0)) / sc), 2)
+
+    def Kzx(self, Z, X):
+        X, _ = self._slice(X, None)
+        Z = self._sliceZ(tf.reshape(Z, (-1, self.input_dim, 2)))
+        Zmu = Z[:, :, 0]
+        idlengthscales = self.lengthscales + tf.exp(Z[:, :, 1])
+        d = self._cust_square_dist(X, Zmu, idlengthscales)
+        return tf.transpose(self.variance * tf.exp(-d/2) * tf.reshape(tf.reduce_prod(self.lengthscales / idlengthscales, 1), (1, -1)))
+
+    def Kzz(self, Z):
+        Z = self._sliceZ(tf.reshape(Z, (-1, self.input_dim, 2)))
+        Zmu = Z[:, :, 0]
+        idlengthscales2 = tf.square(self.lengthscales + tf.exp(Z[:, :, 1]))
+        sc = tf.sqrt(tf.expand_dims(idlengthscales2, 0) + tf.expand_dims(idlengthscales2, 1) - tf.square(self.lengthscales))
+        d = self._cust_square_dist(Zmu, Zmu, sc)
+        return self.variance * tf.exp(-d/2) * tf.reduce_prod(self.lengthscales / sc, 2)
+
+    @staticmethod
+    def init_inducing(X, M, method="default"):
+        if method == "default":
+            Zmu = X[np.random.permutation(len(X))[:M], :]
+            Zlen = np.log(np.ones((M, X.shape[1])) * 0.05)
+            return np.dstack((Zmu, Zlen)).reshape((M, -1))
+        else:
+            raise NotImplementedError("Don't know inducing point initialisation method '%s'" % method)
+
+    @property
+    def pid(self):
+        return 2
 
 
 class Linear(Kern):
@@ -227,10 +299,18 @@ class Add(Kern):
         assert isinstance(k1, Kern) and isinstance(k2, Kern), "can only add Kern instances"
         Kern.__init__(self, input_dim=max(k1.input_dim, k2.input_dim))
         self.k1, self.k2 = k1, k2
+
     def K(self, X, X2=None):
         return self.k1.K(X, X2) + self.k2.K(X, X2)
+
     def Kdiag(self, X):
         return self.k1.Kdiag(X) + self.k2.Kdiag(X)
+
+    def Kzx(self, Z, X):
+        return self.k1.Kzx(Z, X) + self.k2.Kzx(Z, X)
+
+    def Kzz(self, Z):
+        return self.k1.Kzz(Z) + self.k2.Kzz(Z)
 
 
 class Prod(Kern):
@@ -241,9 +321,18 @@ class Prod(Kern):
         assert isinstance(k1, Kern) and isinstance(k2, Kern), "can only add Kern instances"
         Kern.__init__(self, input_dim=max(k1.input_dim, k2.input_dim))
         self.k1, self.k2 = k1, k2
+
     def K(self, X, X2=None):
         return self.k1.K(X, X2) * self.k2.K(X, X2)
+
     def Kdiag(self, X):
         return self.k1.Kdiag(X) * self.k2.Kdiag(X)
+
+    def Kzx(self, Z, X):
+        return self.k1.Kzx(Z, X) * self.k2.Kzx(Z, X)
+
+    def Kzz(self, Z):
+        return self.k1.Kzz(Z) * self.k2.Kzz(Z)
+
 
 

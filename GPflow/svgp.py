@@ -32,6 +32,7 @@ class SVGP(GPModel):
         whiten is a boolean. It True, we use the whitened represenation of the inducing points.
         """
         GPModel.__init__(self, X, Y, kern, likelihood, mean_function)
+        self._minibatch = len(X)
         self.q_diag, self.whiten = q_diag, whiten
         self.Z = Param(Z)
         self.num_latent = num_latent or Y.shape[1]
@@ -50,7 +51,7 @@ class SVGP(GPModel):
             else:
                 KL = kullback_leiblers.gauss_kl_white(self.q_mu, self.q_sqrt, self.num_latent)
         else:
-            K = self.kern.K(self.Z) + eye(self.num_inducing) * 1e-6
+            K = self.kern.Kzz(self.Z) + eye(self.num_inducing) * 1e-6
             if self.q_diag:
                 KL = kullback_leiblers.gauss_kl_diag(self.q_mu, self.q_sqrt, K, self.num_latent)
             else:
@@ -62,22 +63,24 @@ class SVGP(GPModel):
         """
         This gives a variational bound on the model likelihood.
         """
+        subset = tf.random_shuffle(tf.concat(1, [self.X, self.Y]))[:self.minibatch, :]
+        Xsubset = subset[:, :self.X.shape[1]]
+        Ysubset = subset[:, self.X.shape[1]:]
 
         #Get prior KL.
         KL  = self.build_prior_KL()
-    
         #Get conditionals
         if self.whiten:
-            fmean, fvar = conditionals.gaussian_gp_predict_whitened(self.X, self.Z, self.kern, self.q_mu, self.q_sqrt, self.num_latent)
+            fmean, fvar = conditionals.gaussian_gp_predict_whitened(Xsubset, self.Z, self.kern, self.q_mu, self.q_sqrt, self.num_latent)
         else:
-            fmean, fvar = conditionals.gaussian_gp_predict(self.X, self.Z, self.kern, self.q_mu, self.q_sqrt, self.num_latent)            
+            fmean, fvar = conditionals.gaussian_gp_predict(Xsubset, self.Z, self.kern, self.q_mu, self.q_sqrt, self.num_latent)
 
         #add in mean function to conditionals.
-        fmean += self.mean_function(self.X)
-        
+        fmean += self.mean_function(Xsubset)
+
         #Get variational expectations.
-        variational_expectations = self.likelihood.variational_expectations(fmean, fvar, self.Y)
-        
+        variational_expectations = self.likelihood.variational_expectations(fmean, fvar, Ysubset) / float(self.minibatch) * len(self.X)
+
         return tf.reduce_sum(variational_expectations) - KL
 
     def build_predict(self, Xnew):
@@ -87,7 +90,15 @@ class SVGP(GPModel):
             mu, var =  conditionals.gaussian_gp_predict(Xnew, self.Z, self.kern, self.q_mu, self.q_sqrt, self.num_latent)
         return mu + self.mean_function(Xnew), var
 
+    @property
+    def minibatch(self):
+        return self._minibatch
 
-      
+    @minibatch.setter
+    def minibatch(self, val):
+        if self._minibatch != val:
+            self._minibatch = val
+            self._needs_recompile = True
+
 
 
