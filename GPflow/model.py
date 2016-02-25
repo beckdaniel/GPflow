@@ -126,7 +126,7 @@ class Model(Parameterized):
         Parameterized.__init__(self)
         self._name = name
         self._needs_recompile = True
-        self._free_vars = tf.placeholder('float64', name='free_vars')
+        self._free_vars = None
         self._session = tf.Session()
 
     @property
@@ -137,6 +137,7 @@ class Model(Parameterized):
         """
         compile the tensorflow function "self._objective"
         """
+        self._free_vars = tf.Variable(self.get_free_state())
         self.make_tf_array(self._free_vars)
         with self.tf_mode():
             f = self.build_likelihood() + self.build_prior()
@@ -144,6 +145,8 @@ class Model(Parameterized):
 
         minusF = tf.neg( f, name = 'objective' )
         minusG = tf.neg( g, name = 'grad_objective' )
+
+        self.minusF = minusF
 
         #initialize variables. I confess I don;t understand what this does - JH
         init = tf.initialize_all_variables()
