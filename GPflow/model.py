@@ -1,6 +1,6 @@
 from __future__ import print_function
 from .param import Param, Parameterized
-from scipy.optimize import minimize
+import scipy.optimize as opt
 import numpy as np
 import tensorflow as tf
 import hmc
@@ -146,19 +146,21 @@ class Model(Parameterized):
         minusF = tf.neg( f, name = 'objective' )
         minusG = tf.neg( g, name = 'grad_objective' )
 
-        self.minusF = minusF
+        self._tf_objective = minusF
 
         #initialize variables. I confess I don;t understand what this does - JH
         init = tf.initialize_all_variables()
         self._session.run(init)
 
         #build tensorflow functions for computing the likelihood and predictions
-        print("compiling tensorflow function...")
+        # print("compiling tensorflow function...")
+        sys.stdout.write('c')
         sys.stdout.flush()
         def obj(x):
             return self._session.run([minusF,minusG], feed_dict={self._free_vars: x})
         self._objective = obj
-        print("done")
+        sys.stdout.write('d')
+        # print("done")
         sys.stdout.flush()
         self._needs_recompile = False
 
@@ -177,31 +179,78 @@ class Model(Parameterized):
             self._compile()
         return hmc.sample_HMC(self._objective, num_samples, Lmax, epsilon, x0=self.get_free_state(), verbose=verbose)
 
-    def stochatic_step(self, opt_instance=None):
+    def optimize(self, method='L-BFGS-B', callback=None, max_iters=1000, **kw):
         """
-        returns the update step, possibly use self._session.run(step)
-        """
-        if opt_instance is None:
-            opt_instance = tf.train.AdamOptimizer()
+        Optimize the model to find the maximum likelihood or MAP point. We wrap
+        either scipy.optimize.minimize, if type(method) == str, or a Tensorflow
+        optimization method if isinstance(method, tf.train.Optimizer).
+        Args:
+            method:
+            callback:
+            max_iters:
+            **kw:
 
-        self._free_vars = tf.Variable(self.get_free_state())
+        Returns:
+
+        """
+        if type(method) == str:
+            self._optimize_np(method, callback, max_iters, **kw)
+        elif isinstance(method, tf.python.training.optimizer.Optimizer):
+            self._optimize_tf(method, callback, max_iters, **kw)
+        else:
+            raise NotImplementedError("Incorrect optimization method specified.")
+
+    def _optimize_tf(self, method, callback=None, max_iters=1000, cast=False, **kw):
+        # if self._needs_recompile:
+        #     self._compile()
+        # We need a modified version of self._compile because we need to initialise the optimisation step *before*
+        # calling tf.initialize_all_variables()
+        if cast:
+            self._free_vars32 = tf.Variable(self.get_free_state().astype(np.float32))
+            self._free_vars = tf.cast(self._free_vars32, tf.float64)
+        else:
+            self._free_vars = tf.Variable(self.get_free_state())
         self.make_tf_array(self._free_vars)
         with self.tf_mode():
             f = self.build_likelihood() + self.build_prior()
-            minusF = tf.neg( f, name = 'objective' )
+            g, = tf.gradients(f, self._free_vars)
+        minusF = tf.neg( f, name = 'objective' )
+        minusG = tf.neg( g, name = 'grad_objective' )
 
-        step = opt_instance.minimize(minusF, var_list=[self._free_vars])
+        self._tf_objective = minusF
 
-        #initialize variables. I confess I don;t understand what this does - JH
+        tf_objective = tf.cast(self._tf_objective, tf.float32) if cast else self._tf_objective
+        opt_step = method.minimize(tf_objective, var_list=[self._free_vars32 if cast else self._free_vars])
+
         init = tf.initialize_all_variables()
         self._session.run(init)
 
-        return step
+        def obj(x):
+            return self._session.run([minusF,minusG], feed_dict={self._free_vars: x})
+        self._objective = obj
 
+        try:
+            for iteration in xrange(max_iters):
+                self._session.run(opt_step)
+                if callback is not None:
+                    callback(self._session.run(self._free_vars))
+        except KeyboardInterrupt:
+            print("Caught KeyboardInterrupt, setting model with most recent state.")
+            self.set_state(self._session.run(self._free_vars))
+            return None
 
+        final_x = self._session.run(self._free_vars)
+        self.set_state(final_x)
+        fun, jac = self._objective(final_x)
+        r = opt.OptimizeResult(x=final_x,
+                                   success=True,
+                                   message="Finished iterations.",
+                                   fun=fun,
+                                   jac=jac,
+                                   status="Finished iterations.")
+        return r
 
-
-    def optimize(self, method='L-BFGS-B', callback=None, max_iters=1000, **kw):
+    def _optimize_np(self, method='L-BFGS-B', callback=None, max_iters=1000, **kw):
         """
         Optimize the model to find the maximum likelihood  or MAP point. Here
         we wrap `scipy.optimize.minimize`, any keyword arguments are passed
@@ -231,7 +280,7 @@ class Model(Parameterized):
         #here's the actual cll to minimize. cathc keyboard errors as harmless.
         obj = ObjectiveWrapper(self._objective)
         try:
-            result = minimize(fun=obj,
+            result = opt.minimize(fun=obj,
                         x0=self.get_free_state(),
                         method=method,
                         jac=True, # self._objective returns the objective and the jacobian.
@@ -241,11 +290,12 @@ class Model(Parameterized):
         except (KeyboardInterrupt): # pragma: no cover
             print("Caught KeyboardInterrupt, setting model with most recent state.")
             self.set_state(obj._previous_x)
-            return None 
+            return None
 
         print("optimization terminated, setting model state")
         self.set_state(result.x)
         return result
+
 
 class GPModel(Model):
     """
