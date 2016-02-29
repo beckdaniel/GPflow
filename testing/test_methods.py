@@ -174,7 +174,7 @@ class TestWarpedGP(unittest.TestCase):
         wgp.optimize()
         wgp_preds = wgp.predict_y(self.X)
         
-        self.failUnless(np.all_close(gp_preds, wgp_preds))
+        self.failUnless(np.allclose(gp_preds, wgp_preds))
 
 
 
