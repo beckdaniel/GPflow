@@ -1,4 +1,5 @@
 import tensorflow as tf
+import numpy as np
 from .model import GPModel, AutoFlow
 from .param import Param
 from .mean_functions import Zero
@@ -22,6 +23,7 @@ class WarpedGP(GPModel):
         self.num_data = X.shape[0]
         self.num_latent = Y.shape[1]
         self.Y_untransformed = tf.convert_to_tensor(Y.copy())
+        self.num_gauss_hermite_points = 20
 
     def build_likelihood(self):
         K = self.kern.K(self.X) + eye(self.num_data) * self.likelihood.variance
@@ -29,10 +31,7 @@ class WarpedGP(GPModel):
         m = self.mean_function(self.X)
         ll = multivariate_normal(self.Y, m, L)
         f = self.warp.f(self.Y_untransformed)
-        print f
         jacobian, = tf.gradients(f, self.Y_untransformed)
-        print jacobian
-        #jacobian = self.warping_function.fgrad_y(self.Y_untransformed)
         return tf.add(ll, tf.reduce_sum(tf.log(jacobian)))
 
     def build_predict(self, Xnew):
@@ -47,9 +46,39 @@ class WarpedGP(GPModel):
         return fmean, tf.tile(tf.reshape(fvar, (-1,1)), [1, self.Y.shape[1]])
 
     @AutoFlow(tf.placeholder(tf.float64))
-    def predict_y(self, Xnew):
+    def predict_y(self, Xnew, pred_init=1):
         """
         Compute the mean and variance of held-out data at the points Xnew
         """
         pred_f_mean, pred_f_var = self.build_predict(Xnew)
-        return self.likelihood.predict_mean_and_var(pred_f_mean, pred_f_var)
+        mean, var = self.likelihood.predict_mean_and_var(pred_f_mean, pred_f_var)
+        std = tf.sqrt(var)
+        wmean = self._get_warped_mean(mean, std, pred_init=pred_init).T
+        wvar = self._get_warped_variance(mean, std, pred_init=pred_init).T
+        return wmean, wvar
+
+    def _get_warped_term(self, mean, std, gh_x, pred_init=None):
+        arg1 = gh_x.dot(std.T) * np.sqrt(2)
+        arg2 = np.ones(shape=gh_x.shape).dot(mean.T)
+        return self.warping_function.f_inv(arg1 + arg2, y=pred_init)
+
+    def _get_warped_mean(self, mean, std, pred_init=None):
+        """
+        Calculate the warped mean by using Gauss-Hermite quadrature.
+        """
+        gh_x, gh_w = np.polynomial.hermite.hermgauss(self.num_gauss_hermite_points)
+        gh_x = gh_x[:, None]
+        gh_w = gh_w[None, :]
+        return gh_w.dot(self._get_warped_term(mean, std, gh_x)) / np.sqrt(np.pi)
+
+    def _get_warped_variance(self, mean, std, pred_init=None):
+        """
+        Calculate the warped variance by using Gauss-Hermite quadrature.
+        """
+        gh_x, gh_w = np.polynomial.hermite.hermgauss(self.num_gauss_hermite_points)
+        gh_x = gh_x[:,None]
+        gh_w = gh_w[None,:]
+        arg1 = gh_w.dot(self._get_warped_term(mean, std, gh_x, pred_init=pred_init) ** 2) 
+        arg1 /= np.sqrt(np.pi)
+        arg2 = self._get_warped_mean(mean, std, pred_init=pred_init)
+        return arg1 - (arg2 ** 2)
