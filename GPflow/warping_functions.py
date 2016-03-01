@@ -87,22 +87,29 @@ class TanhFunction(WarpingFunction):
         prod = tf.mul(self.d, y)
         return tf.add(prod, summ)
 
-    def f_inv(self, z, max_its=10, y=None):
+    def f_inv(self, z, max_its=50, y=None):
         """
-        No closed form the inverse is available so we use a second
+        No closed form the inverse is available so we use a first
         order Newton method here.
         """
         y = tf.transpose(tf.ones_like(z))
         it = 0
-        update = np.inf
+        update_sum = tf.Variable(tf.constant(0, tf.float64))
         zt = tf.transpose(z)
-        while it == 0 or (tf.reduce_sum(tf.abs(update)) > 1e-10 and it < max_its):
+        rate = np.array([0.9])
+        while (update_sum > 10 and it < max_its):
             fy = self.f(y)
             fgrady = tf.gradients(fy, y)[0]
-            fgrady2 = tf.gradients(fgrady, y)[0]
-            update = tf.div(tf.sub(fy, zt), fgrady)
-            y = tf.sub(y, update)
+            #fgrady2 = tf.gradients(fgrady, y)[0]
+            sub_term = tf.sub(fy, zt)
+            #sec_order_term = tf.div(tf.mul(sub_term, fgrady2), tf.mul(np.array([2.0]), fgrady))
+            #update = tf.div(sub_term, tf.sub(fgrady, sec_order_term))
+            update = tf.div(sub_term, fgrady)
+            #update = tf.Print(update, [tf.reduce_sum(update), y], message="Update in f_inv: ")
+            y = tf.sub(y, tf.mul((rate ** it), update))
             it += 1
+            print it
+            update_sum.assign(tf.reduce_sum(update))
         if it == max_its:
             print("WARNING!!! Maximum number of iterations reached in f_inv ")
             y = tf.Print(y, [tf.reduce_sum(update)], message="Total update in f_inv: ")

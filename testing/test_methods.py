@@ -205,6 +205,7 @@ class TestWarpedGP(unittest.TestCase):
         A test replicating the sine regression problem from
         Snelson's paper.
         """
+        np.random.seed(1000)
         X = (2 * np.pi) * np.random.random(151) - np.pi
         Y = np.sin(X) + np.random.normal(0,0.2,151)
         Y = np.array([np.power(abs(y),float(1)/3) * (1,-1)[y<0] for y in Y])
@@ -213,14 +214,14 @@ class TestWarpedGP(unittest.TestCase):
         warp_k = GPflow.kernels.RBF(1)
         warp_f = GPflow.warping_functions.TanhFunction(n_terms=2)
         #warp_f = GPflow.warping_functions.LogFunction()
+        #warp_f = GPflow.warping_functions.IdentityFunction()
 
         warp_m = GPflow.warped_gp.WarpedGP(X[:, None], Y[:, None], warp_k, warp=warp_f)
-
-        warp_m.warp.c = [-1.0, -0.5]
+        #warp_m.warp.c = [-1.0, -0.5]
         print warp_m
         warp_m.optimize()
         print warp_m
-        print warp_m.predict_y(X[:, None])
+        warp_m.predict_y(X[:, None])
 
 
 if __name__ == "__main__":
