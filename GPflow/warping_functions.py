@@ -36,3 +36,18 @@ class IdentityFunction(WarpingFunction):
 
     def f_inv(self, z, y=None):
         return tf.identity(z)
+
+
+class LogFunction(WarpingFunction):
+    """
+    Easy wrapper for applying a fixed log warping function to
+    positive-only values.
+    """
+    def __init__(self):
+        WarpingFunction.__init__(self)
+
+    def f(self, y):
+        return tf.log(y)
+
+    def f_inv(self, z, y=None):
+        return tf.exp(z)
