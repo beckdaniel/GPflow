@@ -74,19 +74,37 @@ class TanhFunction(WarpingFunction):
 
     def f(self, y):
         """
-        The first two terms replicate y and c to build two
-        matrices of the same shape. These matrices are summed and
-        then passed through the remaining terms of the tanh function.
+        The first term replicate y into a tensor of n_terms. The second one
+        adds 'c' via broadcasting, then it passes through the remaining 
+        terms of the tanh function.
         The result is get by summing the columns of the tanh
-        matrix and adding the linear trend term.
+        tensor and adding the linear trend term.
         """
-        y_repl = tf.matmul(y, np.ones((1, self.n_terms)))
-        c_repl = tf.matmul(np.ones(y.get_shape()), self.c)
-        y_plus_c = tf.add(y_repl, c_repl)
-        tanh_matrix = tf.mul(self.a, tf.tanh(tf.mul(self.b, y_plus_c)))
-        summ = tf.reduce_sum(tanh_matrix, 1, keep_dims=True)
+        y_repl = tf.matmul(y, np.ones((y.get_shape()[1], self.n_terms)))
+        y_plus_c = tf.add(y_repl, self.c)
+        tanh_tensor = tf.mul(self.a, tf.tanh(tf.mul(self.b, y_plus_c)))
+        summ = tf.reduce_sum(tanh_tensor, 1, keep_dims=True)
         prod = tf.mul(self.d, y)
         return tf.add(prod, summ)
 
-    def f_inv(self, z, y=None):
-        return tf.exp(z)
+    def f_inv(self, z, max_its=10, y=None):
+        """
+        No closed form the inverse is available so we use a second
+        order Newton method here.
+        """
+        y = tf.transpose(tf.ones_like(z))
+        it = 0
+        update = np.inf
+        zt = tf.transpose(z)
+        while it == 0 or (tf.reduce_sum(tf.abs(update)) > 1e-10 and it < max_its):
+            fy = self.f(y)
+            fgrady = tf.gradients(fy, y)[0]
+            fgrady2 = tf.gradients(fgrady, y)[0]
+            update = tf.div(tf.sub(fy, zt), fgrady)
+            y = tf.sub(y, update)
+            it += 1
+        if it == max_its:
+            print("WARNING!!! Maximum number of iterations reached in f_inv ")
+            y = tf.Print(y, [tf.reduce_sum(update)], message="Total update in f_inv: ")
+            #print("Sum of updates: %.4f" % tf.reduce_sum(update))
+        return tf.transpose(y)

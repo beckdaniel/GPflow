@@ -66,7 +66,7 @@ class WarpedGP(GPModel):
     def _get_warped_term(self, mean, std, gh_x, pred_init=None):
         arg1 = tf.matmul(gh_x, tf.transpose(std)) * np.sqrt(2.0)
         arg2 = tf.matmul(tf.ones_like(gh_x), tf.transpose(mean))
-        return self.warp.f_inv(arg1 + arg2, y=pred_init)
+        return self.warp.f_inv(tf.add(arg1, arg2), y=pred_init)
 
     def _get_warped_mean(self, mean, std, pred_init=None):
         """
@@ -82,8 +82,8 @@ class WarpedGP(GPModel):
         Calculate the warped variance using Gauss-Hermite quadrature.
         """
         gh_x, gh_w = np.polynomial.hermite.hermgauss(self.num_gauss_hermite_points)
-        gh_x = gh_x[:,None]
-        gh_w = gh_w[None,:]
+        gh_x = gh_x[:, None]
+        gh_w = gh_w[None, :]
         arg1 = tf.matmul(gh_w, tf.pow(self._get_warped_term(mean, std, gh_x, pred_init=pred_init), 2)) 
         arg1 = tf.div(arg1, np.sqrt(np.pi))
         arg2 = self._get_warped_mean(mean, std, pred_init=pred_init)
