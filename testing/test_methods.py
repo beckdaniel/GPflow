@@ -162,7 +162,7 @@ class TestWarpedGP(unittest.TestCase):
         self.X = rng.randn(10,1)
         self.Y = rng.randn(10,1)
 
-    #@unittest.skip('')
+    @unittest.skip('')
     def test_wgp_identity(self):
         k = GPflow.kernels.RBF(1)
         gp = GPflow.gpr.GPR(self.X, self.Y, k)
@@ -177,6 +177,7 @@ class TestWarpedGP(unittest.TestCase):
         
         self.failUnless(np.allclose(gp_preds, wgp_preds))
 
+    @unittest.skip('')
     def test_wgp_log(self):
         """
         Important catch here: a standard GP with log labels
@@ -199,6 +200,22 @@ class TestWarpedGP(unittest.TestCase):
 
         self.failUnless(np.allclose(np.exp(gp_preds)[0], wgp_preds[0]))
 
+    def test_warped_gp_sine(self):
+        """
+        A test replicating the sine regression problem from
+        Snelson's paper.
+        """
+        X = (2 * np.pi) * np.random.random(151) - np.pi
+        Y = np.sin(X) + np.random.normal(0,0.2,151)
+        Y = np.array([np.power(abs(y),float(1)/3) * (1,-1)[y<0] for y in Y])
+        Y = np.abs(Y)
+        
+        warp_k = GPflow.kernels.RBF(1)
+        warp_f = GPflow.warping_functions.TanhFunction(n_terms=2)
+        #warp_f = GPflow.warping_functions.LogFunction()
+        warp_m = GPflow.warped_gp.WarpedGP(X[:, None], Y[:, None], warp_k, warp=warp_f)
+        #warp_m.optimize()
+        print warp_m.predict_y(X[:, None])
 
 
 if __name__ == "__main__":
