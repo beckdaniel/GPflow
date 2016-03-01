@@ -178,45 +178,24 @@ class TestWarpedGP(unittest.TestCase):
         self.failUnless(np.allclose(gp_preds, wgp_preds))
 
     def test_wgp_log(self):
+        """
+        Important catch here: a standard GP with log labels
+        should have the same ***median*** predictions as
+        a WGP with a LogFunction, not the same *mean* predictions.
+        """
         k = GPflow.kernels.RBF(1)
         Y = np.abs(self.Y)
         logY = np.log(Y)
-        print logY
         gp = GPflow.gpr.GPR(self.X, logY, k)
         gp.optimize()
-        #gp.likelihood.variance = 1e-1
-        gp._compile()
         gp_preds = gp.predict_y(self.X)
         
         wk = GPflow.kernels.RBF(1)
         warp = GPflow.warping_functions.LogFunction()
         wgp = GPflow.warped_gp.WarpedGP(self.X, Y, wk, warp=warp)
-        wgp.median = True
+        wgp.median = True # Predicts the mean otherwise
         wgp.optimize()
-        #wgp.likelihood.variance = 1e-1
-        wgp._compile()
         wgp_preds = wgp.predict_y(self.X)
-        print 'GP PREDS'
-        print gp_preds[0]
-        print 'EXP(GP PREDS)'
-        print np.exp(gp_preds)[0] 
-        #print 'EXP(GP PREDS) and NOISE'
-        #print np.exp(gp_preds)[0] * np.exp(1e-1)
-        print 'WGP PREDS'
-        print wgp_preds[0]
-        #print 'WGP PREDS MOD'
-        #print wgp_preds[0] / np.exp(np.sqrt(1e-2))
-        print 'RATIO'
-        print wgp_preds[0] / np.exp(gp_preds)[0]
-
-        #print gp._objective(gp.get_free_state())
-        #print gp.Y
-
-        #print wgp._objective(wgp.get_free_state())
-        #print wgp.Y
-        #print wgp.Y_untransformed
-
-        #print wgp
 
         self.failUnless(np.allclose(np.exp(gp_preds)[0], wgp_preds[0]))
 
