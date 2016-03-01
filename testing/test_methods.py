@@ -180,7 +180,7 @@ class TestWarpedGP(unittest.TestCase):
     def test_wgp_log(self):
         """
         Important catch here: a standard GP with log labels
-        should have the same ***median*** predictions as
+        should have the same *median* predictions as
         a WGP with a LogFunction, not the same *mean* predictions.
         """
         k = GPflow.kernels.RBF(1)
@@ -198,13 +198,6 @@ class TestWarpedGP(unittest.TestCase):
         wgp_preds = wgp.predict_y(self.X)
 
         self.failUnless(np.allclose(np.exp(gp_preds)[0], wgp_preds[0]))
-
-
-
-
-
-
-
 
 
 
