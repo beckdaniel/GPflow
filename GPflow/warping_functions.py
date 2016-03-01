@@ -34,5 +34,5 @@ class IdentityFunction(WarpingFunction):
     def f(self, y):
         return tf.identity(y)
 
-    def f_inv(self, z):
+    def f_inv(self, z, y=None):
         return tf.identity(z)
