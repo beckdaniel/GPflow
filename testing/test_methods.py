@@ -162,7 +162,7 @@ class TestWarpedGP(unittest.TestCase):
         self.X = rng.randn(10,1)
         self.Y = rng.randn(10,1)
 
-    @unittest.skip('')
+    #@unittest.skip('')
     def test_wgp_identity(self):
         k = GPflow.kernels.RBF(1)
         gp = GPflow.gpr.GPR(self.X, self.Y, k)

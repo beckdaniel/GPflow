@@ -32,7 +32,7 @@ class WarpedGP(GPModel):
         m = self.mean_function(self.X)
         f = self.warp.f(self.Y_original)
         ll = multivariate_normal(f, m, L)
-        jacobian, = tf.gradients(f, self.Y_original)
+        jacobian = tf.gradients(f, self.Y_original)[0] # gradient returns a list
         return tf.add(ll, tf.reduce_sum(tf.log(jacobian)))
 
     def build_predict(self, Xnew):
