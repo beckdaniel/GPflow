@@ -57,7 +57,8 @@ class WarpedGP(GPModel):
         mean, var = self.likelihood.predict_mean_and_var(pred_f_mean, pred_f_var)
         std = tf.sqrt(var)
         if self.median:
-            wmean = self.warp.f_inv(mean)
+            wmean = tf.transpose(self.warp.f_inv(tf.transpose(mean)))
+            #wvar = var
         else:
             wmean = tf.transpose(self._get_warped_mean(mean, std, pred_init=pred_init))
         wvar = tf.transpose(self._get_warped_variance(mean, std, pred_init=pred_init))

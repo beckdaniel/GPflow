@@ -203,25 +203,39 @@ class TestWarpedGP(unittest.TestCase):
     def test_warped_gp_sine(self):
         """
         A test replicating the sine regression problem from
-        Snelson's paper.
+        Snelson's paper. We compare the result with GPy.
         """
         np.random.seed(1000)
         X = (2 * np.pi) * np.random.random(151) - np.pi
-        Y = np.sin(X) + np.random.normal(0,0.2,151)
-        Y = np.array([np.power(abs(y),float(1)/3) * (1,-1)[y<0] for y in Y])
-        Y = np.abs(Y)
-        
+        Y = np.sin(X) + np.random.normal(0, 0.2, 151)
+        Y = np.array([np.power(abs(y), 1./3) * (1, -1)[y < 0] for y in Y])
+        #Y = np.abs(Y)
+        rate = 0.2
+
         warp_k = GPflow.kernels.RBF(1)
         warp_f = GPflow.warping_functions.TanhFunction(n_terms=2)
-        #warp_f = GPflow.warping_functions.LogFunction()
-        #warp_f = GPflow.warping_functions.IdentityFunction()
-
+        warp_f.rate = rate
         warp_m = GPflow.warped_gp.WarpedGP(X[:, None], Y[:, None], warp_k, warp=warp_f)
-        #warp_m.warp.c = [-1.0, -0.5]
-        print warp_m
+        #warp_m.median = True
+        warp_m.warp.c = [-1.0, 0.5]
         warp_m.optimize()
         print warp_m
-        warp_m.predict_y(X[:, None])
+        gpflow_preds = warp_m.predict_y(X[:, None])
+
+        import GPy
+        gpy_k = GPy.kern.RBF(1)
+        gpy_warp = GPy.util.warping_functions.TanhFunction(n_terms=2)
+        gpy_warp.rate = rate
+        gpy_m = GPy.models.WarpedGP(X[:, None], Y[:, None], kernel=gpy_k, warping_function=gpy_warp)
+        gpy_m.warping_function.psi[:, 2] = [-1.0, 0.5]
+        gpy_m.optimize(messages=1)
+        print gpy_m
+        #gpy_preds = gpy_m.predict(X[:, None])[0]
+        gpy_preds = gpy_m.predict(X[:, None])
+
+        for pair in zip(gpflow_preds[0], gpy_preds[0]):
+            print pair
+        self.failUnless(np.allclose(gpflow_preds, gpy_preds, atol=1e-4))
 
 
 if __name__ == "__main__":

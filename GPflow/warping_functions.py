@@ -71,6 +71,7 @@ class TanhFunction(WarpingFunction):
         self.c = Param(np.ones((1, self.n_terms))) # no constraints needed
         self.d = Param(1.0, transforms.positive)
         self.initial_y = initial_y
+        self.rate = 0.1
 
     def f(self, y):
         """
@@ -80,38 +81,39 @@ class TanhFunction(WarpingFunction):
         The result is get by summing the columns of the tanh
         tensor and adding the linear trend term.
         """
-        y_repl = tf.matmul(y, np.ones((y.get_shape()[1], self.n_terms)))
+        y_repl = tf.expand_dims(y, -1)
         y_plus_c = tf.add(y_repl, self.c)
         tanh_tensor = tf.mul(self.a, tf.tanh(tf.mul(self.b, y_plus_c)))
-        summ = tf.reduce_sum(tanh_tensor, 1, keep_dims=True)
+        summ = tf.reduce_sum(tanh_tensor, 2)
         prod = tf.mul(self.d, y)
         return tf.add(prod, summ)
 
-    def f_inv(self, z, max_its=50, y=None):
+    def f_inv(self, z, max_its=100, y=None):
         """
-        No closed form the inverse is available so we use a first
+        No closed form for the inverse is available so we use a first
         order Newton method here.
         """
         y = tf.transpose(tf.ones_like(z))
         it = 0
-        update_sum = tf.Variable(tf.constant(0, tf.float64))
-        zt = tf.transpose(z)
-        rate = np.array([0.9])
+        update_sum = np.inf
+        rate = np.array([self.rate]) # enforce dtype=float64
         while (update_sum > 10 and it < max_its):
             fy = self.f(y)
             fgrady = tf.gradients(fy, y)[0]
+            sub_term = tf.transpose(tf.sub(tf.transpose(fy), z))
+            update = tf.div(sub_term, fgrady)
+
+            #################################
+            # We could use a second order update here but
+            # not sure if it is worth the price in time/memory
             #fgrady2 = tf.gradients(fgrady, y)[0]
-            sub_term = tf.sub(fy, zt)
             #sec_order_term = tf.div(tf.mul(sub_term, fgrady2), tf.mul(np.array([2.0]), fgrady))
             #update = tf.div(sub_term, tf.sub(fgrady, sec_order_term))
-            update = tf.div(sub_term, fgrady)
-            #update = tf.Print(update, [tf.reduce_sum(update), y], message="Update in f_inv: ")
+            #################################
+
             y = tf.sub(y, tf.mul((rate ** it), update))
             it += 1
-            print it
-            update_sum.assign(tf.reduce_sum(update))
         if it == max_its:
             print("WARNING!!! Maximum number of iterations reached in f_inv ")
             y = tf.Print(y, [tf.reduce_sum(update)], message="Total update in f_inv: ")
-            #print("Sum of updates: %.4f" % tf.reduce_sum(update))
         return tf.transpose(y)
