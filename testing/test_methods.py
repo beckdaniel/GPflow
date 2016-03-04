@@ -210,7 +210,7 @@ class TestWarpedGP(unittest.TestCase):
         Y = np.sin(X) + np.random.normal(0, 0.2, 151)
         Y = np.array([np.power(abs(y), 1./3) * (1, -1)[y < 0] for y in Y])
         #Y = np.abs(Y)
-        rate = 0.01
+        rate = 0.115
 
         warp_k = GPflow.kernels.RBF(1)
         warp_f = GPflow.warping_functions.TanhFunction(n_terms=2)
@@ -233,8 +233,8 @@ class TestWarpedGP(unittest.TestCase):
         #gpy_preds = gpy_m.predict(X[:, None])[0]
         gpy_preds = gpy_m.predict(X[:, None])
 
-        for pair in zip(gpflow_preds[0], gpy_preds[0]):
-            print pair
+        #for pair in zip(gpflow_preds[0], gpy_preds[0]):
+        #    print pair
         self.failUnless(np.allclose(gpflow_preds, gpy_preds, atol=1e-4))
 
 

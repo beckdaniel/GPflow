@@ -100,20 +100,20 @@ class TanhFunction(WarpingFunction):
         while (update_sum > 10 and it < max_its):
             fy = self.f(y)
             fgrady = tf.gradients(fy, y)[0]
-            sub_term = tf.transpose(tf.sub(tf.transpose(fy), z))
-            update = tf.div(sub_term, fgrady)
+            root = tf.transpose(tf.sub(tf.transpose(fy), z))
+            update = tf.div(root, fgrady)
 
             #################################
             # We could use a second order update here but
             # not sure if it is worth the price in time/memory
             #fgrady2 = tf.gradients(fgrady, y)[0]
-            #sec_order_term = tf.div(tf.mul(sub_term, fgrady2), tf.mul(np.array([2.0]), fgrady))
-            #update = tf.div(sub_term, tf.sub(fgrady, sec_order_term))
+            #sec_order_term = tf.div(tf.mul(root, fgrady2), tf.mul(np.array([2.0]), fgrady))
+            #update = tf.div(root, tf.sub(fgrady, sec_order_term))
             #################################
 
-            y = tf.sub(y, tf.mul((rate ** it), update))
+            y = tf.sub(y, tf.mul(rate, update))
             it += 1
         if it == max_its:
             print("WARNING!!! Maximum number of iterations reached in f_inv ")
-            y = tf.Print(y, [tf.reduce_sum(update)], message="Total update in f_inv: ")
+            y = tf.Print(y, [tf.reduce_sum(root)], message="Total update in f_inv: ")
         return tf.transpose(y)
